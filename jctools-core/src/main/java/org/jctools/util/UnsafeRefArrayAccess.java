@@ -26,6 +26,9 @@ public final class UnsafeRefArrayAccess
         final int scale = UnsafeAccess.UNSAFE.arrayIndexScale(Object[].class);
         if (4 == scale)
         {
+            // scale * 0  = 0            (0 & 6)<<1
+            // scale * 1  = 4            (2 & 6)<<1
+            // scale * 2  = 8            (4 & 6)<<1
             REF_ELEMENT_SHIFT = 2;
         }
         else if (8 == scale)

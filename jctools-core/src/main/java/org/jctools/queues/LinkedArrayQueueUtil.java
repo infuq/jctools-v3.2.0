@@ -17,9 +17,9 @@ final class LinkedArrayQueueUtil
     }
 
     /**
-     * This method assumes index is actually (index << 1) because lower bit is
-     * used for resize. This is compensated for by reducing the element shift.
-     * The computation is constant folded, so there's no cost.
+     * This method assumes index is actually (index << 1) because lower bit is used for resize.
+     * This is compensated for by reducing the element shift(这可以通过减少元素移位来弥补).
+     * The computation is constant folded, so there's no cost(计算是常数的，所以没有成本).
      */
     static long modifiedCalcCircularRefElementOffset(long index, long mask)
     {

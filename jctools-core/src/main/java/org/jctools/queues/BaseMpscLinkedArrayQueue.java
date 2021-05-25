@@ -190,9 +190,9 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
     {
         RangeUtil.checkGreaterThanOrEqual(initialCapacity, 2, "initialCapacity");
 
-        int p2capacity = Pow2.roundToPowerOfTwo(initialCapacity);
+        int p2capacity = Pow2.roundToPowerOfTwo(initialCapacity);// 2^n
         // leave lower bit of mask clear
-        long mask = (p2capacity - 1) << 1;
+        long mask = (p2capacity - 1) << 1;// 如果p2capacity=100   mask=110
         // need extra element to point at next array
         E[] buffer = allocateRefArray(p2capacity + 1);
         producerBuffer = buffer;
@@ -257,11 +257,6 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
     @Override
     public boolean offer(final E e)
     {
-        if (null == e)
-        {
-            throw new NullPointerException();
-        }
-
         long mask;
         E[] buffer;
         long pIndex;
@@ -271,6 +266,7 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
             long producerLimit = lvProducerLimit();
             pIndex = lvProducerIndex();
             // lower bit is indicative of resize, if we see it we spin until it's cleared
+            // 表示正在扩容
             if ((pIndex & 1) == 1)
             {
                 continue;
@@ -296,18 +292,22 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
                         return false;
                     case QUEUE_RESIZE:
                         resize(mask, buffer, pIndex, e, null);
+                        // 直接返回成功
                         return true;
                 }
             }
 
+            // +2
             if (casProducerIndex(pIndex, pIndex + 2))
             {
                 break;
             }
         }
         // INDEX visible before ELEMENT
+        // 计算元素在数组中的偏移地址
         final long offset = modifiedCalcCircularRefElementOffset(pIndex, mask);
         soRefElement(buffer, offset, e); // release element e
+//        System.out.println("consumerMask:" + this.consumerMask + " consumerIndex:" + this.lvConsumerIndex() + " producerMask:" + this.producerMask + " producerIndex:" + this.lvProducerIndex() + " producerLimit:" + this.lvProducerLimit());
         return true;
     }
 
@@ -418,7 +418,7 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
         // grab index for resize -> set lower bit
         else if (casProducerIndex(pIndex, pIndex + 1))
         {
-            // trigger a resize
+            // trigger a resize 触发扩容
             return QUEUE_RESIZE;
         }
         else
@@ -753,11 +753,11 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
 
     private void resize(long oldMask, E[] oldBuffer, long pIndex, E e, Supplier<E> s)
     {
-        assert (e != null && s == null) || (e == null || s != null);
         int newBufferLength = getNextBufferSize(oldBuffer);
         final E[] newBuffer;
         try
         {
+            // 创建新数组
             newBuffer = allocateRefArray(newBufferLength);
         }
         catch (OutOfMemoryError oom)
@@ -793,6 +793,7 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
 
         // make resize visible to consumer
         soRefElement(oldBuffer, offsetInOld, JUMP);
+//        System.out.println("consumerMask:" + this.consumerMask + " consumerIndex:" + this.lvConsumerIndex() + " producerMask:" + this.producerMask + " producerIndex:" + this.lvProducerIndex() + " producerLimit:" + this.lvProducerLimit());
     }
 
     /**
