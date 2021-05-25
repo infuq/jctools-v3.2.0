@@ -266,7 +266,7 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
             long producerLimit = lvProducerLimit();
             pIndex = lvProducerIndex();
             // lower bit is indicative of resize, if we see it we spin until it's cleared
-            // 表示正在扩容
+            // 表示正在扩容.
             if ((pIndex & 1) == 1)
             {
                 continue;
