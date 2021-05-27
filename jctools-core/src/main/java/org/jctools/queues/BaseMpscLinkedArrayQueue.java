@@ -192,66 +192,14 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
 
         int p2capacity = Pow2.roundToPowerOfTwo(initialCapacity);// 2^n
         // leave lower bit of mask clear
-        long mask = (p2capacity - 1) << 1;// 如果p2capacity=100   mask=110
+        long mask = (p2capacity - 1) << 1;// 如果p2capacity=100   mask=110  即mask最后一位是0
         // need extra element to point at next array
-        E[] buffer = allocateRefArray(p2capacity + 1);
+        E[] buffer = allocateRefArray(p2capacity + 1); // buffer容量+1, 多出来的这个元素用于指向下一个数组
         producerBuffer = buffer;
         producerMask = mask;
         consumerBuffer = buffer;
         consumerMask = mask;
-        soProducerLimit(mask); // we know it's all empty to start with
-    }
-
-    @Override
-    public int size()
-    {
-        // NOTE: because indices are on even numbers we cannot use the size util.
-
-        /*
-         * It is possible for a thread to be interrupted or reschedule between the read of the producer and
-         * consumer indices, therefore protection is required to ensure size is within valid range. In the
-         * event of concurrent polls/offers to this method the size is OVER estimated as we read consumer
-         * index BEFORE the producer index.
-         */
-        long after = lvConsumerIndex();
-        long size;
-        while (true)
-        {
-            final long before = after;
-            final long currentProducerIndex = lvProducerIndex();
-            after = lvConsumerIndex();
-            if (before == after)
-            {
-                size = ((currentProducerIndex - after) >> 1);
-                break;
-            }
-        }
-        // Long overflow is impossible, so size is always positive. Integer overflow is possible for the unbounded
-        // indexed queues.
-        if (size > Integer.MAX_VALUE)
-        {
-            return Integer.MAX_VALUE;
-        }
-        else
-        {
-            return (int) size;
-        }
-    }
-
-    @Override
-    public boolean isEmpty()
-    {
-        // Order matters!
-        // Loading consumer before producer allows for producer increments after consumer index is read.
-        // This ensures this method is conservative in it's estimate. Note that as this is an MPMC there is
-        // nothing we can do to make this an exact method.
-        return (this.lvConsumerIndex() == this.lvProducerIndex());
-    }
-
-    @Override
-    public String toString()
-    {
-        return this.getClass().getName();
+        soProducerLimit(mask); // we know it's all empty to start with          producerLimit = 110  这仅仅是初值,resize时会增大producerLimit
     }
 
     @Override
@@ -266,7 +214,7 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
             long producerLimit = lvProducerLimit();
             pIndex = lvProducerIndex();
             // lower bit is indicative of resize, if we see it we spin until it's cleared
-            // 表示正在扩容.
+            // 最低位是1表示正在扩容.
             if ((pIndex & 1) == 1)
             {
                 continue;
@@ -306,8 +254,11 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
         // INDEX visible before ELEMENT
         // 计算元素在数组中的偏移地址
         final long offset = modifiedCalcCircularRefElementOffset(pIndex, mask);
+        // buffer是存储元素的数组
+        // offset是上一行计算的元素偏移地址
+        // e是要存储的值
         soRefElement(buffer, offset, e); // release element e
-//        System.out.println("consumerMask:" + this.consumerMask + " consumerIndex:" + this.lvConsumerIndex() + " producerMask:" + this.producerMask + " producerIndex:" + this.lvProducerIndex() + " producerLimit:" + this.lvProducerLimit());
+        System.out.println("offer:  consumerMask:" + this.consumerMask + " consumerIndex:" + this.lvConsumerIndex() + " producerMask:" + this.producerMask + " producerIndex:" + this.lvProducerIndex() + " producerLimit:" + this.lvProducerLimit() + " offset:" + offset);
         return true;
     }
 
@@ -415,7 +366,7 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
             // offer should return false;
             return QUEUE_FULL;
         }
-        // grab index for resize -> set lower bit
+        // grab index for resize -> set lower bit  将pIndex最低位置1表示正在扩容,那么其他生产者线程只能暂时'自旋'
         else if (casProducerIndex(pIndex, pIndex + 1))
         {
             // trigger a resize 触发扩容
@@ -774,7 +725,9 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
         final long offsetInOld = modifiedCalcCircularRefElementOffset(pIndex, oldMask);
         final long offsetInNew = modifiedCalcCircularRefElementOffset(pIndex, newMask);
 
+        // 在新buffer中设置元素值
         soRefElement(newBuffer, offsetInNew, e == null ? s.get() : e);// element in new array
+        // 链接新老buffer
         soRefElement(oldBuffer, nextArrayOffset(oldMask), newBuffer);// buffer linked
 
         // ASSERT code
@@ -787,13 +740,15 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
         soProducerLimit(pIndex + Math.min(newMask, availableInQueue));
 
         // make resize visible to the other producers
+        // 让扩容对其他生产者可见
         soProducerIndex(pIndex + 2);
 
         // INDEX visible before ELEMENT, consistent with consumer expectation
 
         // make resize visible to consumer
+        // 让扩容对其他消费者可见
         soRefElement(oldBuffer, offsetInOld, JUMP);
-//        System.out.println("consumerMask:" + this.consumerMask + " consumerIndex:" + this.lvConsumerIndex() + " producerMask:" + this.producerMask + " producerIndex:" + this.lvProducerIndex() + " producerLimit:" + this.lvProducerLimit());
+        System.out.println("resize: consumerMask:" + this.consumerMask + " consumerIndex:" + this.lvConsumerIndex() + " producerMask:" + this.producerMask + " producerIndex:" + this.lvProducerIndex() + " producerLimit:" + this.lvProducerLimit()  + " offset:" + offsetInOld);
     }
 
     /**
@@ -805,4 +760,59 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
      * @return current buffer capacity for elements (excluding next pointer and jump entry) * 2
      */
     protected abstract long getCurrentBufferCapacity(long mask);
+
+
+    @Override
+    public int size()
+    {
+        // NOTE: because indices are on even numbers we cannot use the size util.
+
+        /*
+         * It is possible for a thread to be interrupted or reschedule between the read of the producer and
+         * consumer indices, therefore protection is required to ensure size is within valid range. In the
+         * event of concurrent polls/offers to this method the size is OVER estimated as we read consumer
+         * index BEFORE the producer index.
+         */
+        long after = lvConsumerIndex();
+        long size;
+        while (true)
+        {
+            final long before = after;
+            final long currentProducerIndex = lvProducerIndex();
+            after = lvConsumerIndex();
+            if (before == after)
+            {
+                size = ((currentProducerIndex - after) >> 1);
+                break;
+            }
+        }
+        // Long overflow is impossible, so size is always positive. Integer overflow is possible for the unbounded
+        // indexed queues.
+        if (size > Integer.MAX_VALUE)
+        {
+            return Integer.MAX_VALUE;
+        }
+        else
+        {
+            return (int) size;
+        }
+    }
+
+    @Override
+    public boolean isEmpty()
+    {
+        // Order matters!
+        // Loading consumer before producer allows for producer increments after consumer index is read.
+        // This ensures this method is conservative in it's estimate. Note that as this is an MPMC there is
+        // nothing we can do to make this an exact method.
+        return (this.lvConsumerIndex() == this.lvProducerIndex());
+    }
+
+    @Override
+    public String toString()
+    {
+        return this.getClass().getName();
+    }
+
+
 }
