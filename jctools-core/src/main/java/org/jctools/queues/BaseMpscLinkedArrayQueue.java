@@ -239,6 +239,7 @@ abstract class BaseMpscLinkedArrayQueue<E> extends BaseMpscLinkedArrayQueueColdP
                     case QUEUE_FULL:
                         return false;
                     case QUEUE_RESIZE:
+                        // 扩容以及设置元素
                         resize(mask, buffer, pIndex, e, null);
                         // 直接返回成功
                         return true;
